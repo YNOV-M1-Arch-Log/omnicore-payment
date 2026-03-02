@@ -1,0 +1,269 @@
+{
+  "info": {
+    "name": "Omnicore Payment Service — Direct Tests",
+    "description": "Tests the Payment Service directly on port 3005 (bypassing the gateway). No JWT validation at this layer.\n\n**Prerequisites:** A `pendingOrderId` variable must point to an existing Order in `pending` status.\n\n**Newman CLI:**\n```\nnewman run postman_collection.json \\\n  --env-var pendingOrderId=<uuid> \\\n  --delay-request 200\n```\n\n**Refund test note:** The `POST /:id/refund` test requires the payment to be in `succeeded` status, which only happens after Stripe fires the `payment_intent.succeeded` webhook. In dev, trigger it with:\n```\nstripe trigger payment_intent.succeeded\n```\nor use the Stripe dashboard to confirm the test payment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",       "value": "http://localhost:3005", "type": "string" },
+    { "key": "pendingOrderId","value": "", "type": "string",
+      "_comment": "UUID of an existing Order with status=pending — required for payment intent creation" },
+    { "key": "paymentId",     "value": "", "type": "string" },
+    { "key": "succeededPaymentId", "value": "", "type": "string",
+      "_comment": "UUID of a payment with status=succeeded — required for refund test" }
+  ],
+  "item": [
+
+    {
+      "name": "01 — Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test(\"Service name\", () => pm.expect(body.service).to.eql('omnicore-payment'));",
+            "pm.test(\"Status OK\", () => pm.expect(body.status).to.eql('OK'));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "02 — Create Payment Intent",
+      "item": [
+        {
+          "name": "POST /api/payments/intent — valid pending order",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test(\"Status pending\", () => pm.expect(body.status).to.eql('pending'));",
+            "pm.test(\"Has id\", () => pm.expect(body.id).to.be.a('string'));",
+            "pm.test(\"Has stripePaymentIntentId (pi_...)\", () => pm.expect(body.stripePaymentIntentId).to.match(/^pi_/));",
+            "pm.test(\"Has stripeClientSecret\", () => pm.expect(body.stripeClientSecret).to.be.a('string'));",
+            "pm.test(\"Has amount > 0\", () => pm.expect(parseFloat(body.amount)).to.be.above(0));",
+            "pm.test(\"Has currency\", () => pm.expect(body.currency).to.be.a('string'));",
+            "pm.test(\"Has orderId\", () => pm.expect(body.orderId).to.eql(pm.collectionVariables.get('pendingOrderId')));",
+            "pm.collectionVariables.set('paymentId', body.id);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{pendingOrderId}}\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/intent", "host": ["{{baseUrl}}"], "path": ["api","payments","intent"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/intent — duplicate → 409",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 409\", () => pm.response.to.have.status(409));",
+            "pm.test(\"Error message mentions order\", () => pm.expect(pm.response.json().error.message).to.include('already exists'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{pendingOrderId}}\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/intent", "host": ["{{baseUrl}}"], "path": ["api","payments","intent"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/intent — missing orderId → 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+            "pm.test(\"Has errors array\", () => pm.expect(pm.response.json().errors).to.be.an('array'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/intent", "host": ["{{baseUrl}}"], "path": ["api","payments","intent"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/intent — invalid UUID → 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"not-a-uuid\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/intent", "host": ["{{baseUrl}}"], "path": ["api","payments","intent"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/intent — unknown order → 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"00000000-0000-0000-0000-000000000000\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/intent", "host": ["{{baseUrl}}"], "path": ["api","payments","intent"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "03 — Read Payments",
+      "item": [
+        {
+          "name": "GET /api/payments (paginated list)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test(\"Has data array\", () => pm.expect(body.data).to.be.an('array'));",
+            "pm.test(\"Has total\", () => pm.expect(body.total).to.be.a('number'));",
+            "pm.test(\"Has page\", () => pm.expect(body.page).to.eql(1));",
+            "pm.test(\"Has limit\", () => pm.expect(body.limit).to.be.a('number'));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments", "host": ["{{baseUrl}}"], "path": ["api","payments"] }
+          }
+        },
+        {
+          "name": "GET /api/payments?status=pending",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "const data = pm.response.json().data;",
+            "pm.test(\"All pending\", () => data.forEach(p => pm.expect(p.status).to.eql('pending')));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments?status=pending", "host": ["{{baseUrl}}"], "path": ["api","payments"], "query": [{ "key": "status", "value": "pending" }] }
+          }
+        },
+        {
+          "name": "GET /api/payments?page=1&limit=5",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test(\"Max 5 results\", () => pm.expect(body.data.length).to.be.at.most(5));",
+            "pm.test(\"Page 1\", () => pm.expect(body.page).to.eql(1));",
+            "pm.test(\"Limit 5\", () => pm.expect(body.limit).to.eql(5));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments?page=1&limit=5", "host": ["{{baseUrl}}"], "path": ["api","payments"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "5" }] }
+          }
+        },
+        {
+          "name": "GET /api/payments/order/:orderId",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test(\"Correct payment id\", () => pm.expect(body.id).to.eql(pm.collectionVariables.get('paymentId')));",
+            "pm.test(\"Correct orderId\", () => pm.expect(body.orderId).to.eql(pm.collectionVariables.get('pendingOrderId')));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments/order/{{pendingOrderId}}", "host": ["{{baseUrl}}"], "path": ["api","payments","order","{{pendingOrderId}}"] }
+          }
+        },
+        {
+          "name": "GET /api/payments/order/:orderId — unknown → 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments/order/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api","payments","order","00000000-0000-0000-0000-000000000000"] }
+          }
+        },
+        {
+          "name": "GET /api/payments/:id",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "pm.test(\"Correct id\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('paymentId')));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments/{{paymentId}}", "host": ["{{baseUrl}}"], "path": ["api","payments","{{paymentId}}"] }
+          }
+        },
+        {
+          "name": "GET /api/payments/:id — unknown → 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/payments/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api","payments","00000000-0000-0000-0000-000000000000"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "04 — Refund",
+      "item": [
+        {
+          "name": "POST /api/payments/:id/refund — payment not succeeded → 422",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 422 (payment not yet succeeded)\", () => pm.response.to.have.status(422));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"requested_by_customer\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/{{paymentId}}/refund", "host": ["{{baseUrl}}"], "path": ["api","payments","{{paymentId}}","refund"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/:id/refund — full refund (requires succeeded payment)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const status = pm.response.code;",
+            "if (status === 422) {",
+            "  pm.test(\"Skipped — payment not in succeeded state (trigger Stripe webhook first)\", () => true);",
+            "} else {",
+            "  pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+            "  const body = pm.response.json();",
+            "  pm.test(\"Status refunded\", () => pm.expect(body.status).to.eql('refunded'));",
+            "  pm.test(\"Has refundId\", () => pm.expect(body.refundId).to.be.a('string'));",
+            "  pm.test(\"refundedAt set\", () => pm.expect(body.refundedAt).to.not.be.null);",
+            "}"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"requested_by_customer\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/{{succeededPaymentId}}/refund", "host": ["{{baseUrl}}"], "path": ["api","payments","{{succeededPaymentId}}","refund"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/:id/refund — invalid reason → 400",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+            "pm.test(\"Has errors\", () => pm.expect(pm.response.json().errors).to.be.an('array'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"not-a-valid-reason\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/{{paymentId}}/refund", "host": ["{{baseUrl}}"], "path": ["api","payments","{{paymentId}}","refund"] }
+          }
+        },
+        {
+          "name": "POST /api/payments/unknown/refund → 404",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"duplicate\"}" },
+            "url": { "raw": "{{baseUrl}}/api/payments/00000000-0000-0000-0000-000000000000/refund", "host": ["{{baseUrl}}"], "path": ["api","payments","00000000-0000-0000-0000-000000000000","refund"] }
+          }
+        }
+      ]
+    }
+
+  ]
+}
