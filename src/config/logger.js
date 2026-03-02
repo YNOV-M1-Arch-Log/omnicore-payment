@@ -7,7 +7,8 @@ const buildEcsLog = (overrides = {}) => {
   const level = overrideLevel || process.env.LOG_LEVEL || defaultLevel;
 
   const base = {
-    service: serviceName || 'omnicore-payment',
+    'ecs.version': '8.11.0',
+    service: { name: serviceName || 'omnicore-payment' },
     env,
     ...userBase,
   };
@@ -15,7 +16,7 @@ const buildEcsLog = (overrides = {}) => {
   const config = {
     level,
     base,
-    timestamp: pino.stdTimeFunctions.isoTime,
+    timestamp: () => `,"@timestamp":"${new Date().toISOString()}"`,
     redact: {
       paths: [
         'req.headers.authorization',
@@ -27,8 +28,8 @@ const buildEcsLog = (overrides = {}) => {
       censor: '[REDACTED]',
     },
     formatters: {
-      level(label, number) {
-        return { 'log.level': number, level: label };
+      level(label) {
+        return { 'log.level': label };
       },
       log(object) {
         if (object.err instanceof Error) {
