@@ -7,6 +7,7 @@ const pinoHttpMiddleware = require('./middlewares/pino-http');
 const { correlationId, attachCorrelationId } = require('./middlewares/correlation');
 const webhookRoutes = require('./routes/webhook.routes');
 const apiRoutes = require('./routes');
+const errorHandler = require('./middlewares/error-handler');
 
 const app = express();
 
@@ -37,16 +38,6 @@ app.get('/health', (req, res) => {
 app.use('/api', apiRoutes);
 
 // Global error handler
-app.use((err, req, res, _next) => {
-  const status = err.status || 500;
-  const correlationIdVal = req.correlationId ? req.correlationId() : undefined;
-  res.status(status).json({
-    error: {
-      message: err.message || 'Internal Server Error',
-      status,
-      correlationId: correlationIdVal,
-    },
-  });
-});
+app.use(errorHandler);
 
 module.exports = app;
