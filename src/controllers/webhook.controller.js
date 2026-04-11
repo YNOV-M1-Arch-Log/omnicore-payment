@@ -11,7 +11,8 @@ class WebhookController {
     try {
       const signature = req.headers['stripe-signature'];
       if (!signature) {
-        return res.status(400).json({ error: { message: 'Missing stripe-signature header' } });
+        const correlationId = req.correlationId ? req.correlationId() : 'unknown';
+        return res.status(400).json({ error: { code: 'MISSING_SIGNATURE', message: 'Missing stripe-signature header', status: 400, correlationId } });
       }
 
       // req.body is a raw Buffer here — passed directly to stripe.webhooks.constructEvent
@@ -21,7 +22,9 @@ class WebhookController {
       logger.error({ err: error }, 'Webhook handling failed');
       // Return proper status so Stripe knows whether to retry
       const status = error.status === 400 ? 400 : 500;
-      res.status(status).json({ error: { message: error.message } });
+      const correlationId = req.correlationId ? req.correlationId() : 'unknown';
+      const code = error.code || (status === 400 ? 'INVALID_SIGNATURE' : 'WEBHOOK_ERROR');
+      res.status(status).json({ error: { code, message: error.message, status, correlationId } });
     }
   }
 }
