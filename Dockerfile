@@ -1,5 +1,5 @@
 # ── Builder ───────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:22-alpine3.21 AS builder
 
 WORKDIR /app
 
@@ -31,9 +31,15 @@ RUN mkdir -p /app/omnicore-payment/node_modules
 RUN npm prune --omit=dev
 
 # ── Runner ────────────────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM node:22-alpine3.21
 
 WORKDIR /app
+
+# Patch all OS-level packages to eliminate known CVEs
+RUN apk upgrade --no-cache
+
+# Upgrade npm to get patched tar bundled version (fixes tar CVEs in npm's own bundled copy)
+RUN npm install -g npm@latest
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
