@@ -7,4 +7,5 @@ module.exports = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY,
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   orderServiceUrl: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
+  internalServiceToken: process.env.INTERNAL_SERVICE_TOKEN,
 };

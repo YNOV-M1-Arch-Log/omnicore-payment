@@ -234,7 +234,10 @@ class PaymentService {
     try {
       const res = await fetch(`${config.orderServiceUrl}/api/orders/${orderId}`, {
         signal: AbortSignal.timeout(5000),
-        headers: { 'X-Correlation-Id': correlationId || 'internal' },
+        headers: {
+          'X-Correlation-Id': correlationId || 'internal',
+          'X-Internal-Service-Token': config.internalServiceToken,
+        },
       });
       if (res.status === 404) {
         const err = new Error(`Order ${orderId} not found`);
@@ -266,6 +269,7 @@ class PaymentService {
         headers: {
           'Content-Type': 'application/json',
           'X-Correlation-Id': correlationId || 'internal',
+          'X-Internal-Service-Token': config.internalServiceToken,
         },
         body: JSON.stringify(body),
       });
