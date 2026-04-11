@@ -7,8 +7,12 @@ class PaymentRepository {
 
   async findAll(filters = {}) {
     const where = {};
-    if (filters.orderId) where.orderId = filters.orderId;
-    if (filters.status)  where.status  = filters.status;
+    if (filters.orderId) {
+      where.orderId = filters.orderId;
+    }
+    if (filters.status)  {
+      where.status  = filters.status;
+    }
 
     const page  = Math.max(1, filters.page  || 1);
     const limit = Math.min(100, Math.max(1, filters.limit || 20));

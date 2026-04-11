@@ -100,13 +100,13 @@ class PaymentService {
     }
 
     const paymentAmount = Number(payment.amount);
-    if (amount != null && amount > paymentAmount) {
+    if (amount !== null && amount !== undefined && amount > paymentAmount) {
       const err = new Error(`Refund amount ${amount} exceeds payment amount ${paymentAmount}`);
       err.status = 422;
       throw err;
     }
 
-    const isPartial = amount != null && amount < paymentAmount;
+    const isPartial = amount !== null && amount !== undefined && amount < paymentAmount;
 
     const refundParams = {
       payment_intent: payment.stripePaymentIntentId,
@@ -190,7 +190,9 @@ class PaymentService {
 
   async _onPaymentFailed(intent) {
     const payment = await paymentRepository.findByStripeIntentId(intent.id);
-    if (!payment) return;
+    if (!payment) {
+      return;
+    }
 
     const reason = intent.last_payment_error?.message || 'Unknown failure';
     await paymentRepository.update(payment.id, {
@@ -203,7 +205,9 @@ class PaymentService {
 
   async _onPaymentCancelled(intent) {
     const payment = await paymentRepository.findByStripeIntentId(intent.id);
-    if (!payment) return;
+    if (!payment) {
+      return;
+    }
 
     await paymentRepository.update(payment.id, { status: 'cancelled' });
     logger.info({ paymentId: payment.id }, 'Payment cancelled');
@@ -211,7 +215,9 @@ class PaymentService {
 
   async _onPaymentProcessing(intent) {
     const payment = await paymentRepository.findByStripeIntentId(intent.id);
-    if (!payment) return;
+    if (!payment) {
+      return;
+    }
 
     await paymentRepository.update(payment.id, { status: 'processing' });
     logger.info({ paymentId: payment.id }, 'Payment processing');
@@ -225,8 +231,10 @@ class PaymentService {
    * Once the payment resolves it is inert, but returning it in every GET is unnecessary.
    */
   _sanitize(payment) {
-    if (!payment || payment.status === 'pending') return payment;
-    const { stripeClientSecret: _omit, ...rest } = payment;
+    if (!payment || payment.status === 'pending') {
+      return payment;
+    }
+    const { stripeClientSecret: _secret, ...rest } = payment;
     return rest;
   }
 
@@ -251,7 +259,9 @@ class PaymentService {
       }
       return res.json();
     } catch (err) {
-      if (err.status) throw err;
+      if (err.status) {
+        throw err;
+      }
       const e = new Error('Order service unreachable');
       e.status = 503;
       throw e;
@@ -261,7 +271,9 @@ class PaymentService {
   async _updateOrderStatus(orderId, status, cancellationReason, correlationId) {
     try {
       const body = { status };
-      if (cancellationReason) body.cancellationReason = cancellationReason;
+      if (cancellationReason) {
+        body.cancellationReason = cancellationReason;
+      }
 
       const res = await fetch(`${config.orderServiceUrl}/api/orders/${orderId}/status`, {
         method: 'PATCH',

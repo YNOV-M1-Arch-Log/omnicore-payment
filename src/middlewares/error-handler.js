@@ -4,7 +4,9 @@ const { logger } = require('../config/logger');
  * Maps Prisma client error codes to HTTP-friendly status + message.
  */
 const mapPrismaError = (err) => {
-  if (!err.code || !err.code.startsWith('P')) return null;
+  if (!err.code || !err.code.startsWith('P')) {
+    return null;
+  }
 
   switch (err.code) {
     case 'P2002': {

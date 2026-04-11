@@ -7,7 +7,7 @@ class WebhookController {
    * Body must arrive as raw Buffer (express.raw middleware applied in app.js).
    * Stripe signature verified inside payment service.
    */
-  async handleStripe(req, res, next) {
+  async handleStripe(req, res, _next) {
     try {
       const signature = req.headers['stripe-signature'];
       if (!signature) {
